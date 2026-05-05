@@ -93,10 +93,13 @@ public class RedisEnterpriseAdmin {
         //curl -X DELETE -H "accept: application/json" -u "admin@rl.org:qST2pbF" https://re-cluster1.ps-redislabs.org:9443/v1/users/2 -k -i
         //curl -X DELETE -H "accept: application/json" -u "admin@rl.org:qST2pbF" https://re-cluster1.ps-redislabs.org:9443/v1/users/3 -k -i
         //curl -X DELETE -H "accept: application/json" -u "admin@rl.org:qST2pbF" https://re-cluster1.ps-redislabs.org:9443/v1/users/4 -k -i
-        createUser("John Doe", "john.doe@example.com", 4);
-        createUser("Mike Smith", "mike.smith@example.com", 5);
-        createUser("Cary Johnson", "cary.johnson@example.com", 1);
-
+        try {
+            createUser("John Doe", "john.doe@example.com", 4);
+            createUser("Mike Smith", "mike.smith@example.com", 5);
+            createUser("Cary Johnson", "cary.johnson@example.com", 1);
+        }catch(Exception e){
+            System.out.println("Exception on create user: " + e.getMessage());    
+        }
         System.out.println("\nUsers:");
         listAndDisplayUsers();
 
