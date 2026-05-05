@@ -2,6 +2,7 @@ package com.redis.assignment.exercise2;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.net.URI;
@@ -10,23 +11,25 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.Base64;
 
-import javax.net.ssl.*;
-import java.security.cert.X509Certificate;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 
 public class RedisEnterpriseAdmin {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static final String API_BASE_URL =
-            getenv("REDIS_API_BASE_URL", "https://cluster.local:9443");
+            getenv("REDIS_API_BASE_URL", "https://re-cluster1.ps-redislabs.org:9443");
     private static final String API_USER =
-            getenv("REDIS_API_USER", "ahmad.faozi@gmail.com");
+            getenv("REDIS_API_USER", "admin@rl.org");
     private static final String API_PASSWORD =
-            getenv("REDIS_API_PASSWORD", "Bismillah@19");
+            getenv("REDIS_API_PASSWORD", "qST2pbF");
     private static final String DB_NAME =
-            getenv("REDIS_DB_NAME", "redisdb1");
+            getenv("REDIS_DB_NAME", "new-db");
     private static final String TEMP_USER_PASSWORD =
             getenv("REDIS_TEMP_USER_PASSWORD", "ChangeMe123!");
 
@@ -36,31 +39,40 @@ public class RedisEnterpriseAdmin {
     private final HttpClient client;
     private final String basicAuthHeader;
 
-    private HttpClient buildUnsafeClient() throws Exception {
-    TrustManager[] trustAllCerts = new TrustManager[] {
-        new X509TrustManager() {
-            public void checkClientTrusted(X509Certificate[] chain, String authType) {}
-            public void checkServerTrusted(X509Certificate[] chain, String authType) {}
-            public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
-        }
-    };
-
-    SSLContext sslContext = SSLContext.getInstance("TLS");
-    sslContext.init(null, trustAllCerts, new SecureRandom());
-
-    return HttpClient.newBuilder()
-            .sslContext(sslContext)
-            .connectTimeout(Duration.ofSeconds(15))
-            .build();
-    }
-
+    
     public RedisEnterpriseAdmin() throws Exception {
         this.client = buildUnsafeClient();
-
+    
         String token = API_USER + ":" + API_PASSWORD;
         this.basicAuthHeader = "Basic " + Base64.getEncoder()
                 .encodeToString(token.getBytes(StandardCharsets.UTF_8));
     }
+
+    private static HttpClient buildUnsafeClient() throws Exception {
+        TrustManager[] trustAllCerts = new TrustManager[] {
+                new X509TrustManager() {
+                    @Override
+                    public void checkClientTrusted(X509Certificate[] chain, String authType) { }
+    
+                    @Override
+                    public void checkServerTrusted(X509Certificate[] chain, String authType) { }
+    
+                    @Override
+                    public X509Certificate[] getAcceptedIssuers() {
+                        return new X509Certificate[0];
+                    }
+                }
+        };
+
+        SSLContext sslContext = SSLContext.getInstance("TLS");
+        sslContext.init(null, trustAllCerts, new SecureRandom());
+    
+        return HttpClient.newBuilder()
+                .sslContext(sslContext)
+                .connectTimeout(Duration.ofSeconds(15))
+                .build();
+    }
+    
 
     public static void main(String[] args) throws Exception {
         new RedisEnterpriseAdmin().run();
@@ -70,9 +82,20 @@ public class RedisEnterpriseAdmin {
         long dbUid = createDatabase();
         System.out.println("Created database uid=" + dbUid + " name=" + DB_NAME);
 
-        createUser("John Doe", "john.doe@example.com", "db_viewer");
-        createUser("Mike Smith", "mike.smith@example.com", "db_member");
-        createUser("Cary Johnson", "cary.johnson@example.com", "admin");
+        //as the cluster is RBAC-enabled, we'll use role_uids instead of role in the request body
+        //and because initialized db only has role 'admin' with uid = 1
+        //we need to create two roles required in this exercises (db_viewer and db_member)
+        //curl -X POST -H "accept: application/json" -H "Content-Type: application/json" -u "admin@rl.org:qST2pbF" https://re-cluster1.ps-redislabs.org:9443/v1/roles -d '{"name":"db_viewer", "management": "db_viewer"}' -k -i
+        //curl -X POST -H "accept: application/json" -H "Content-Type: application/json" -u "admin@rl.org:qST2pbF" https://re-cluster1.ps-redislabs.org:9443/v1/roles -d '{"name":"db_member", "management": "db_member"}' -k -i
+
+        //lines for user creation below may fail if this java code has been executed before (hence same emails already registered for existing users)
+        //you may delete these users first, easier using curl like below (assume uids are 2,3,4)
+        //curl -X DELETE -H "accept: application/json" -u "admin@rl.org:qST2pbF" https://re-cluster1.ps-redislabs.org:9443/v1/users/2 -k -i
+        //curl -X DELETE -H "accept: application/json" -u "admin@rl.org:qST2pbF" https://re-cluster1.ps-redislabs.org:9443/v1/users/3 -k -i
+        //curl -X DELETE -H "accept: application/json" -u "admin@rl.org:qST2pbF" https://re-cluster1.ps-redislabs.org:9443/v1/users/4 -k -i
+        createUser("John Doe", "john.doe@example.com", 4);
+        createUser("Mike Smith", "mike.smith@example.com", 5);
+        createUser("Cary Johnson", "cary.johnson@example.com", 1);
 
         System.out.println("\nUsers:");
         listAndDisplayUsers();
@@ -91,7 +114,7 @@ public class RedisEnterpriseAdmin {
         ObjectNode body = MAPPER.createObjectNode();
         body.set("bdb", bdb);
 
-        HttpResponse<String> resp = sendJson("POST", "/v2/bdbs", body);
+        HttpResponse<String> resp = sendJson("POST", "/v1/bdbs", bdb);
         ensureSuccess(resp, 200, 201);
 
         JsonNode json = parseJson(resp.body());
@@ -105,14 +128,16 @@ public class RedisEnterpriseAdmin {
         return uid;
     }
 
-    private void createUser(String name, String email, String role) throws Exception {
+    private void createUser(String name, String email, int roleId) throws Exception {
         ObjectNode body = MAPPER.createObjectNode();
         body.put("email", email);
         body.put("password", TEMP_USER_PASSWORD);
         body.put("name", name);
-        body.put("role", role);
         body.put("email_alerts", false);
         body.put("auth_method", "regular");
+
+        ArrayNode roleUids = body.putArray("role_uids");
+        roleUids.add(roleId);
 
         HttpResponse<String> resp = sendJson("POST", "/v1/users", body);
         ensureSuccess(resp, 200, 201);
